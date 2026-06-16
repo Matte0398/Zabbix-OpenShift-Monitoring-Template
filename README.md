@@ -14,6 +14,13 @@ This project was developed to provide a flexible and scalable monitoring solutio
 
 The template is designed to reduce manual configuration efforts through automated discovery mechanisms and dynamic monitoring workflows.
 
+## Architecture
+
+The template collects data from OpenShift and Prometheus/Thanos APIs using HTTP agent items.  
+Raw data is then processed through Zabbix preprocessing rules, dependent items and low-level discovery rules.
+
+The goal is to reduce the number of direct API calls while keeping monitoring flexible and scalable.
+
 ## Why this project?
 
 This project was created to address several common challenges encountered when monitoring OpenShift environments:
@@ -36,6 +43,14 @@ The objective was to create a reusable and scalable monitoring solution suitable
 - Support for enterprise-scale environments
 - Reduced manual configuration effort
 - Native integration with Zabbix
+
+## Requirements
+
+- Zabbix 7.0 or later
+- OpenShift 4.x
+- API token with read-only access
+- Access to OpenShift API
+- Access to Prometheus or Thanos query API
 
 ## Monitored Components
 
