@@ -5,14 +5,6 @@
 ![Thanos](https://img.shields.io/badge/Thanos-Query%20API-blue)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen)
 
-# Template OpenShift Cluster by Thanos API
-
-Template for monitoring OpenShift clusters through the Thanos Query API.
-
-This template uses PromQL-based HTTP agent items, dependent items and LLD rules to detect problematic or critical OpenShift resources. It is designed to reduce HTTP requests, limit unnecessary object discovery and focus monitoring on actionable conditions.
-
-Author: Matteo Z.
-
 ## Overview
 
 This Zabbix template monitors OpenShift clusters through the **Thanos Query API** using HTTP agent master items, PromQL queries, low-level discovery rules and dependent item prototypes.
