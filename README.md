@@ -1,4 +1,4 @@
-# Zabbix OpenShift Monitoring Template
+# Template OpenShift Cluster by Thanos API
 
 ![Zabbix](https://img.shields.io/badge/Zabbix-7.0-red)
 ![OpenShift](https://img.shields.io/badge/OpenShift-4.x-red)
@@ -7,87 +7,86 @@
 
 ## Overview
 
-This Zabbix template monitors OpenShift clusters through the **Thanos Query API** using HTTP agent master items, PromQL queries, low-level discovery rules and dependent item prototypes.
+This template is intended for environments where OpenShift cluster state is queried through the **Thanos Querier / Prometheus API** and collected by Zabbix using HTTP agent items.
 
-The template follows a **critical/problem-based discovery** approach: instead of discovering every object in the cluster, most discovery rules return only resources that are currently problematic or above a configured threshold. This helps reduce the number of created items and limits unnecessary load on the Zabbix Server, Zabbix Proxy and database.
+The template is mainly **problem-oriented**: most low-level discovery rules are based on PromQL queries that return only resources matching warning or critical conditions. This reduces the amount of discovered objects, item count and HTTP calls compared with discovering all OpenShift resources.
 
-## Main goals
+Some checks are intentionally always evaluated, such as the Thanos query health check and the aggregate etcd latency item, because they validate the monitoring path or provide cluster-level control-plane indicators.
 
-- Monitor OpenShift cluster health through Thanos/Prometheus metrics.
-- Reduce the number of HTTP requests by grouping related checks into shared raw items.
-- Reduce the number of discovered objects by using PromQL queries that return only critical/problematic resources.
-- Avoid JavaScript preprocessing where possible.
-- Use PromQL for calculations and JSONPath for value extraction.
-- Keep item history/trends low for dynamic or problem-based resources.
+---
 
 ## Requirements
 
-- Zabbix 7.0 or later.
-- Access from Zabbix Server or Proxy to the Thanos Querier endpoint.
-- A valid bearer token with permission to query OpenShift monitoring metrics.
-- OpenShift monitoring stack exposing the required metrics through Thanos.
+- Zabbix **7.0+**
+- OpenShift cluster with monitoring stack enabled
+- Reachable Thanos Querier endpoint
+- Bearer token with permission to query metrics from the OpenShift monitoring API
+- Metrics exposed by:
 
-## Template metadata
+  - `cluster_operator_conditions`
+  - `kube-state-metrics`
+  - `openshift-state-metrics`
+  - node exporter / kubelet volume metrics
+  - etcd metrics
 
-| Field             | Value                                      |
-| ----------------- | ------------------------------------------ |
-| Template name     | `Template OpenShift Cluster by Thanos API` |
-| Template group    | `Templates/Applications`                   |
-| UUID              | `9c7a805f5a4f4a86ad26d73c89482ab9`         |
-| Main data source  | Thanos Query API                           |
-| Collection method | Zabbix HTTP agent                          |
-| Discovery model   | Critical/problem-based LLD                 |
+## Template import
 
-## Template tags
+1. Go to **Data collection → Templates**
+2. Click **Import**
+3. Upload `template_openshift.yaml`
+4. Import the template
+5. Link the template to the Zabbix host representing the OpenShift cluster
+6. Configure the required macros on the template or host
 
-- `datasource = thanos`
-- `platform = openshift`
-- `target = critical-object`
+## Required host macros
 
-## Required macros
+At minimum, configure these macros:
 
-At minimum, configure these macros on the host representing the OpenShift cluster:
+| Macro               | Description                                                                                           |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `{$OCP.THANOS.URL}` | Base URL of the Thanos Querier endpoint, for example `https://thanos-querier.example.com`.            |
+| `{$OCP.TOKEN}`      | Bearer token used to query the Thanos/OpenShift monitoring API. This macro is defined as secret text. |
 
-| Macro               | Description                                                                                         |
-| ------------------- | --------------------------------------------------------------------------------------------------- |
-| `{$OCP.THANOS.URL}` | Base URL of the Thanos Querier endpoint. Example: `https://thanos-querier.example.com`              |
-| `{$OCP.TOKEN}`      | Bearer token used by Zabbix HTTP agent items to query Thanos. This is configured as a secret macro. |
+Example:
 
-## Template macros
+```text
+{$OCP.THANOS.URL}=https://thanos-querier-openshift-monitoring.apps.example.com
+{$OCP.TOKEN}=<bearer_token>
+```
 
-| Macro                                   |                                 Default | Description                                                                                                  |
-| --------------------------------------- | --------------------------------------: | ------------------------------------------------------------------------------------------------------------ |
-| `{$OCP.CO.PROGRESSING.MAX.TIME}`        |                                  `1800` | Maximum time, in seconds, a ClusterOperator can remain in `Progressing=True` before triggering an alert.     |
-| `{$OCP.CRONJOB.MAX.LAST.SUCCESS}`       |                                 `86400` | Maximum allowed time, in seconds, since the last successful CronJob run.                                     |
-| `{$OCP.CRONJOB.NS.MATCHES}`             |                                    `^$` | Regex used to include namespaces in the critical CronJob discovery. Default `^$` disables CronJob discovery. |
-| `{$OCP.ETCD.LATENCY.P99.WARN}`          |                                     `1` | Warning threshold in seconds for etcd p99 latency.                                                           |
-| `{$OCP.JOB.MAX.RUN.TIME}`               |                                  `1800` | Number of seconds after which an active Job is considered long-running.                                      |
-| `{$OCP.JOB.NS.MATCHES}`                 |                                    `.*` | Regex for the namespaces in which to enable critical Job discovery.                                          |
-| `{$OCP.NODE.FS.CRIT}`                   |                                    `90` | Critical threshold for node filesystem usage, expressed as a percentage.                                     |
-| `{$OCP.NODE.FS.DEVICE.NOT_MATCHES}`     | See filesystem exclusion defaults below | Devices to exclude from node filesystem queries.                                                             |
-| `{$OCP.NODE.FS.FSTYPE.NOT_MATCHES}`     | See filesystem exclusion defaults below | Filesystem types to exclude from node filesystem queries.                                                    |
-| `{$OCP.NODE.FS.MOUNTPOINT.NOT_MATCHES}` | See filesystem exclusion defaults below | Mount points to exclude from node filesystem queries.                                                        |
-| `{$OCP.NODE.FS.WARN}`                   |                                    `75` | Warning threshold for node filesystem usage, expressed as a percentage.                                      |
-| `{$OCP.NS.NOT_MATCHES}`                 |                                    `^$` | Global regex to exclude namespaces from problem-based discovery. `^$` excludes nothing.                      |
-| `{$OCP.POD.NS.MATCHES}`                 |                                    `.*` | Regex for the namespaces in which to enable critical Pod discovery.                                          |
-| `{$OCP.POD.RESTARTS.WARN}`              |                                     `3` | Restart threshold over 15 minutes for generating critical Pod objects.                                       |
-| `{$OCP.PVC.CRIT}`                       |                                    `90` | Critical threshold for PVC usage, expressed as a percentage.                                                 |
-| `{$OCP.PVC.NS.MATCHES}`                 |                                    `.*` | Regex for the namespaces in which to enable critical PVC discovery.                                          |
-| `{$OCP.PVC.WARN}`                       |                                    `75` | Warning threshold for PVC usage, expressed as a percentage.                                                  |
-| `{$OCP.ROUTE.NS.MATCHES}`               |                                    `.*` | Regex for the namespaces in which to enable critical Route discovery.                                        |
-| `{$OCP.RQ.CRIT}`                        |                                    `90` | Critical threshold for ResourceQuota usage, expressed as a percentage.                                       |
-| `{$OCP.RQ.NS.MATCHES}`                  |                                    `.*` | Regex for the namespaces in which to enable critical ResourceQuota discovery.                                |
-| `{$OCP.RQ.RESOURCE.MATCHES}`            |                                    `.*` | Regex for the ResourceQuota resources to include.                                                            |
-| `{$OCP.RQ.RESOURCE.NOT_MATCHES}`        |                                    `^$` | Regex for ResourceQuota resources to exclude. `^$` excludes nothing.                                         |
-| `{$OCP.RQ.WARN}`                        |                                    `75` | Warning threshold for ResourceQuota usage, expressed as a percentage.                                        |
-| `{$OCP.SVC.NOT_MATCHES}`                |                                    `^$` | Regex to exclude services/endpoints from Service discovery. `^$` excludes nothing.                           |
-| `{$OCP.SVC.NS.MATCHES}`                 |                                    `.*` | Regex for the namespaces in which to enable critical Service endpoint discovery.                             |
-| `{$OCP.THANOS.URL}`                     |    `https://thanos-querier.example.com` | Thanos Querier base URL.                                                                                     |
-| `{$OCP.TOKEN}`                          |                           `SECRET_TEXT` | Bearer token for querying the Thanos/OpenShift monitoring API.                                               |
+## Other macros
+
+| Macro                                   | Default value                        | Description                                                                                            |
+| --------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `{$OCP.CO.PROGRESSING.MAX.TIME}`        | `1800`                               | Maximum time, in seconds, a ClusterOperator can remain in Progressing=True before triggering an alert. |
+| `{$OCP.ETCD.LATENCY.P99.WARN}`          | `1`                                  | Warning threshold in seconds for etcd p99 latency.                                                     |
+| `{$OCP.JOB.MAX.RUN.TIME}`               | `1800`                               | The number of seconds after which an active job is considered long-running.                            |
+| `{$OCP.JOB.NS.MATCHES}`                 | `.*`                                 | Regex for the namespaces in which to enable critical job discovery.                                    |
+| `{$OCP.NODE.FS.CRIT}`                   | `90`                                 | Critical threshold for file system node usage, expressed as a percentage.                              |
+| `{$OCP.NODE.FS.DEVICE.NOT_MATCHES}`     | `See below`                          | Devices to exclude from filesystem node queries.                                                       |
+| `{$OCP.NODE.FS.FSTYPE.NOT_MATCHES}`     | `See below`                          | File system types to exclude from node file system queries.                                            |
+| `{$OCP.NODE.FS.MOUNTPOINT.NOT_MATCHES}` | `See below`                          | Mount points to exclude from filesystem node queries.                                                  |
+| `{$OCP.NODE.FS.WARN}`                   | `75`                                 | Warning threshold for file system node usage, expressed as a percentage.                               |
+| `{$OCP.NS.NOT_MATCHES}`                 | `^$`                                 | Global regex to exclude namespaces from problem-based discovery. ^$ = excludes nothing.                |
+| `{$OCP.POD.NS.MATCHES}`                 | `.*`                                 | Regex for the namespaces in which to enable critical Pod discovery.                                    |
+| `{$OCP.POD.RESTARTS.WARN}`              | `3`                                  | Restart threshold set to 15 minutes for generating critical Pod objects.                               |
+| `{$OCP.PVC.CRIT}`                       | `90`                                 | Critical threshold for PVC use, expressed as a percentage.                                             |
+| `{$OCP.PVC.NS.MATCHES}`                 | `.*`                                 | Regex for the namespaces in which to enable critical PVC discovery.                                    |
+| `{$OCP.PVC.WARN}`                       | `75`                                 | Warning threshold for PVC use, expressed as a percentage.                                              |
+| `{$OCP.ROUTE.NS.MATCHES}`               | `.*`                                 | Regex for the namespaces in which to enable critical route discovery.                                  |
+| `{$OCP.RQ.CRIT}`                        | `90`                                 | ResourceQuota usage critical threshold, expressed as a percentage.                                     |
+| `{$OCP.RQ.NS.MATCHES}`                  | `.*`                                 | Regex for the namespaces in which to enable critical ResourceQuota discovery.                          |
+| `{$OCP.RQ.RESOURCE.MATCHES}`            | `.*`                                 | Regular expression for the ResourceQuota resources to include.                                         |
+| `{$OCP.RQ.RESOURCE.NOT_MATCHES}`        | `^$`                                 | Regular expression for ResourceQuota resources to exclude. ^$ = excludes nothing.                      |
+| `{$OCP.RQ.WARN}`                        | `75`                                 | ResourceQuota usage warning threshold, expressed as a percentage.                                      |
+| `{$OCP.SVC.NOT_MATCHES}`                | `^$`                                 | Regex to exclude services/endpoints from Service discovery. ^$ = excludes nothing.                     |
+| `{$OCP.SVC.NS.MATCHES}`                 | `.*`                                 | Regex for the namespaces in which to enable critical discovery of service endpoints.                   |
+| `{$OCP.THANOS.URL}`                     | `https://thanos-querier.example.com` | Thanos Querier base URL.                                                                               |
+| `{$OCP.TOKEN}`                          | `SECRET_TEXT`                        | Bearer token for querying the Thanos/OpenShift monitoring API.                                         |
 
 ### Node filesystem exclusion macros
 
-The following macros define the default regex filters used to exclude devices, filesystem types and mount points from node filesystem monitoring.
+The following macros control filesystem discovery exclusions:
 
 ```text
 {$OCP.NODE.FS.DEVICE.NOT_MATCHES}=^(rootfs)$
@@ -97,278 +96,188 @@ The following macros define the default regex filters used to exclude devices, f
 {$OCP.NODE.FS.MOUNTPOINT.NOT_MATCHES}=^/run($|/.*)|^/var/lib/kubelet/pods/.*|^/var/lib/containers/storage/.*|^/proc($|/.*)|^/sys($|/.*)|^/dev($|/.*)
 ```
 
+## How data collection works
+
+The template uses HTTP agent master items to query:
+
+```text
+{$OCP.THANOS.URL}/api/v1/query
+```
+
+Each raw item sends a PromQL query through the `query` request parameter and receives a JSON response from the Prometheus-compatible API.
+
+The discoveries are dependent items based on raw master items. They extract only the metrics returned by problem-oriented PromQL queries and create item prototypes only for resources currently requiring attention.
+
+## Raw items
+
+| Raw item                                     | Key                                          | Description                                                                                                        |
+| -------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `OCP: Critical ClusterOperators raw`         | `ocp.critical.clusteroperators.raw`          | Collects ClusterOperator conditions that indicate a problematic state.                                             |
+| `OCP: Critical Etcd members status raw`      | `ocp.critical.etcd.members.status.raw`       | Collects etcd members matching a critical condition.                                                               |
+| `OCP: Critical Jobs status raw`              | `ocp.critical.jobs.status.raw`               | Collects Jobs that are either failed or running longer than the configured threshold.                              |
+| `OCP: Critical Node filesystems raw`         | `ocp.critical.node.filesystems.raw`          | Collects node filesystems whose usage is above the configured warning threshold.                                   |
+| `OCP: Critical Nodes status raw`             | `ocp.critical.nodes.status.raw`              | Collects nodes that are not ready or marked as unschedulable.                                                      |
+| `OCP: Critical Pod CrashLoopBackOff raw`     | `ocp.critical.pods.crashloopbackoff.raw`     | Collects Pods with containers currently in CrashLoopBackOff state.                                                 |
+| `OCP: Critical Pod problem state raw`        | `ocp.critical.pods.problem_state.raw`        | Collects Pods in problematic states.                                                                               |
+| `OCP: Critical Pod restarts raw`             | `ocp.critical.pods.restarts.raw`             | Collects Pods whose container restart count increased above the configured threshold during the evaluation window. |
+| `OCP: Critical PV status raw`                | `ocp.critical.pv.status.raw`                 | Collects PersistentVolumes in failed or terminating state.                                                         |
+| `OCP: Critical PVC usage raw`                | `ocp.critical.pvc.usage.raw`                 | Collects PersistentVolumeClaims whose used capacity is above the configured warning threshold.                     |
+| `OCP: Critical ResourceQuota usage raw`      | `ocp.critical.resourcequota.usage.raw`       | Collects ResourceQuota resources whose usage percentage is above the configured warning threshold.                 |
+| `OCP: Critical Routes status raw`            | `ocp.critical.routes.status.raw`             | Collects OpenShift Routes that are not admitted.                                                                   |
+| `OCP: Critical Service endpoints status raw` | `ocp.critical.services.endpoints.status.raw` | Collects Services with unavailable or not-ready endpoints.                                                         |
+| `OCP: Etcd request latency p99`              | `ocp.etcd.request.latency.p99`               | Collects the cluster-level p99 etcd request latency.                                                               |
+| `OCP: Thanos query health`                   | `ocp.thanos.query.health`                    | Checks whether the Thanos query endpoint is reachable and able to return a valid Prometheus API response.          |
+
+## Discovery rules and item prototypes
+
+| Discovery rule                                   | Key                                              | Created item prototypes |
+| ------------------------------------------------ | ------------------------------------------------ | ----------------------- |
+| `OCP Critical ClusterOperator Discovery`         | `ocp.critical.clusteroperator.discovery`         | ClusterOperator {#CO}: {#CO_CONDITION} |
+| `OCP Critical Etcd Member Discovery`             | `ocp.critical.etcd.member.discovery`             | Etcd member {#ETCD_INSTANCE}: Critical state |
+| `OCP Critical Job Status Discovery`              | `ocp.critical.job.status.discovery`              | Job {#NAMESPACE}/{#JOB}: Failed count<br>Job {#NAMESPACE}/{#JOB}: Running seconds |
+| `OCP Critical Node Filesystem Discovery`         | `ocp.critical.node.filesystem.discovery`         | Node {#NODE_INSTANCE}: Filesystem {#FS_MOUNTPOINT} used % |
+| `OCP Critical Node Status Discovery`             | `ocp.critical.node.status.discovery`             | Node {#NODE}: Not ready<br>Node {#NODE}: Unschedulable |
+| `OCP Critical Pod CrashLoopBackOff Discovery`    | `ocp.critical.pod.crashloopbackoff.discovery`    | Pod {#NAMESPACE}/{#POD}: CrashLoopBackOff |
+| `OCP Critical Pod Problem State Discovery`       | `ocp.critical.pod.problem_state.discovery`       | Pod {#NAMESPACE}/{#POD}: Problem state |
+| `OCP Critical Pod Restarts Discovery`            | `ocp.critical.pod.restarts.discovery`            | Pod {#NAMESPACE}/{#POD}: Restarts in 15m |
+| `OCP Critical PV Status Discovery`               | `ocp.critical.pv.status.discovery`               | PV {#PV}: Deletion timestamp<br>PV {#PV}: Failed |
+| `OCP Critical PVC Usage Discovery`               | `ocp.critical.pvc.usage.discovery`               | PVC {#NAMESPACE}/{#PVC}: Used % |
+| `OCP Critical ResourceQuota Usage Discovery`     | `ocp.critical.resourcequota.usage.discovery`     | ResourceQuota {#NAMESPACE}/{#RESOURCEQUOTA}/{#RESOURCE}: Used % |
+| `OCP Critical Route Status Discovery`            | `ocp.critical.route.status.discovery`            | Route {#NAMESPACE}/{#ROUTE}: Not admitted |
+| `OCP Critical Service Endpoint Status Discovery` | `ocp.critical.service.endpoint.status.discovery` | Service {#NAMESPACE}/{#SERVICE}: Not ready endpoints<br>Service {#NAMESPACE}/{#SERVICE}: No available endpoints |
+
 ## Value mappings
 
-### OCP status: Healthy / Unhealthy
-
-- `0` → `Unhealthy`
-- `1` → `Healthy`
-
-### OCP status: OK / Problem
-
-- `0` → `OK`
-- `1` → `Problem`
-
-### OCP status: Up / Down
-
-- `0` → `Down`
-- `1` → `Up`
-
-### OCP status: Yes / No
-
-- `0` → `No`
-- `1` → `Yes`
-
-## Raw HTTP agent items
-
-These are the master items that execute PromQL queries against Thanos. Most dependent item prototypes are based on these raw JSON responses.
-
-| Item                                       | Purpose                                                             |
-| ------------------------------------------ | ------------------------------------------------------------------- |
-| OCP: Critical ClusterOperators raw         | Detect problematic ClusterOperators.                                |
-| OCP: Critical Jobs status raw              | Detect failed or long-running Jobs.                                 |
-| OCP: Critical Node filesystems raw         | Detect node filesystems above warning threshold.                    |
-| OCP: Critical Nodes status raw             | Detect nodes that are not ready or unschedulable.                   |
-| OCP: Critical Pods status raw              | Detect problematic pods and pods with excessive restarts.           |
-| OCP: Critical PV status raw                | Detect failed or terminating PersistentVolumes.                     |
-| OCP: Critical PVC usage raw                | Detect PVCs above warning threshold.                                |
-| OCP: Critical ResourceQuota usage raw      | Detect ResourceQuota resources above warning threshold.             |
-| OCP: Critical Routes status raw            | Detect routes that are not admitted.                                |
-| OCP: Critical Service endpoints status raw | Detect services with no available endpoints or not-ready endpoints. |
-| OCP: Etcd members status raw               | Collect etcd member target-up and leader status.                    |
-| OCP: Etcd request latency p99              | Collect etcd request p99 latency.                                   |
-| OCP: Thanos query health                   | Check that Thanos query endpoint returns a valid response.          |
+| Value map                         | Mapping                |
+| --------------------------------- | ---------------------- |
+| `OCP status: Healthy / Unhealthy` | 0=Unhealthy, 1=Healthy |
+| `OCP status: OK / Problem`        | 0=OK, 1=Problem        |
+| `OCP status: Up / Down`           | 0=Down, 1=Up           |
+| `OCP status: Yes / No`            | 0=No, 1=Yes            |
 
 ## PromQL queries used by raw items
 
-### OCP: Critical ClusterOperators raw
-
-```promql
-(cluster_operator_conditions{condition="Available",status!="True"} == 1) or (cluster_operator_conditions{condition=~"Degraded|Progressing",status="True"} == 1)
-```
-
-### OCP: Critical Jobs status raw
-
-```promql
-label_replace((kube_job_status_failed>0) or (((time()-kube_job_status_start_time) and on(namespace,job_name) (kube_job_status_active>0))>={$OCP.JOB.MAX.RUN.TIME}),"check","any","job_name",".*") or label_replace(kube_job_status_failed>0,"check","failed","job_name",".*") or label_replace(((time()-kube_job_status_start_time) and on(namespace,job_name) (kube_job_status_active>0))>={$OCP.JOB.MAX.RUN.TIME},"check","longrunning","job_name",".*")
-```
-
-### OCP: Critical Node filesystems raw
-
-```promql
-100 * (1 - node_filesystem_avail_bytes/node_filesystem_size_bytes) >= {$OCP.NODE.FS.WARN}
-```
-
-### OCP: Critical Nodes status raw
-
-```promql
-label_replace(max by (node) ((kube_node_status_condition{condition="Ready",status=~"false|unknown"} == 1) or (kube_node_spec_unschedulable == 1)), "check", "any", "node", ".*") or label_replace(max by (node) (kube_node_status_condition{condition="Ready",status=~"false|unknown"} == 1), "check", "not_ready", "node", ".*") or label_replace(max by (node) (kube_node_spec_unschedulable == 1), "check", "unschedulable", "node", ".*")
-```
-
-### OCP: Critical Pods status raw
-
-```promql
-label_replace((max by(namespace,pod)((kube_pod_status_phase{phase=~"Pending|Failed|Unknown"}==1) or (kube_pod_status_unschedulable==1) or (kube_pod_status_ready{condition="false"}==1) or (kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}==1))>0) or (sum by(namespace,pod)(increase(kube_pod_container_status_restarts_total[15m]))>={$OCP.POD.RESTARTS.WARN}),"check","any","pod",".*") or label_replace(max by(namespace,pod)((kube_pod_status_phase{phase=~"Pending|Failed|Unknown"}==1) or (kube_pod_status_unschedulable==1) or (kube_pod_status_ready{condition="false"}==1) or (kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}==1))>0,"check","problem_state","pod",".*") or label_replace(sum by(namespace,pod)(increase(kube_pod_container_status_restarts_total[15m]))>={$OCP.POD.RESTARTS.WARN},"check","restarts","pod",".*")
-```
-
-### OCP: Critical PV status raw
-
-```promql
-label_replace((kube_persistentvolume_status_phase{phase="Failed"}==1) or (kube_persistentvolume_deletion_timestamp>0),"check","any","persistentvolume",".*") or label_replace(kube_persistentvolume_status_phase{phase="Failed"}==1,"check","failed","persistentvolume",".*") or label_replace(kube_persistentvolume_deletion_timestamp>0,"check","terminating","persistentvolume",".*")
-```
-
-### OCP: Critical PVC usage raw
-
-```promql
-100 * (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) >= {$OCP.PVC.WARN}
-```
-
-### OCP: Critical ResourceQuota usage raw
-
-```promql
-((100 * kube_resourcequota{type="used"} / on(namespace,resourcequota,resource) kube_resourcequota{type="hard"}) and on(namespace,resourcequota,resource) (kube_resourcequota{type="hard"} > 0)) >= {$OCP.RQ.WARN}
-```
-
-### OCP: Critical Routes status raw
-
-```promql
-((openshift_route_status{type="Admitted",status="True"} == bool 0) == 1)
-```
-
-### OCP: Critical Service endpoints status raw
-
-```promql
-label_replace((kube_endpoint_info unless on(namespace,endpoint)(sum by(namespace,endpoint)(kube_endpoint_address_available)>0)) or (sum by(namespace,endpoint)(kube_endpoint_address_not_ready)>0),"check","any","endpoint",".*") or label_replace(kube_endpoint_info unless on(namespace,endpoint)(sum by(namespace,endpoint)(kube_endpoint_address_available)>0),"check","no_available","endpoint",".*") or label_replace(sum by(namespace,endpoint)(kube_endpoint_address_not_ready)>0,"check","not_ready","endpoint",".*")
-```
-
-### OCP: Etcd members status raw
-
-```promql
-label_replace(up{job=~".*etcd.*"},"check","target_up","instance",".*") or label_replace(etcd_server_has_leader,"check","has_leader","instance",".*")
-```
-
-### OCP: Etcd request latency p99
-
-```promql
-histogram_quantile(0.99, sum(rate(etcd_request_duration_seconds_bucket[10m])) by (le)) or vector(0)
-```
-
-### OCP: Thanos query health
+### Thanos health
 
 ```promql
 vector(1)
 ```
 
-## Monitored areas
+### Etcd p99 latency
+
+```promql
+histogram_quantile(0.99, sum(rate(etcd_request_duration_seconds_bucket[10m])) by (le)) or vector(0)
+```
 
 ### ClusterOperators
 
-The template detects ClusterOperators that are not available, degraded or progressing. The discovery creates one item per problematic ClusterOperator condition.
+```promql
+max by(name,condition) ((cluster_operator_conditions{condition="Available",status=~"False|Unknown"}==1) or (cluster_operator_conditions{condition=~"Degraded|Progressing",status="True"}==1))
+```
 
-The ClusterOperator item uses the value map `OCP status: OK / Problem`.
+### Etcd critical state
 
-### Nodes
+```promql
+max by(instance)((up{job=~".*etcd.*"}==bool 0) or (etcd_server_has_leader==bool 0))>0
+```
 
-The template discovers nodes only when they are in one of the critical states returned by the node status query:
+### Jobs failed or long-running
 
-- `Not ready`
-- `Unschedulable`
+```promql
+label_replace((kube_job_status_failed>0) or (((time()-kube_job_status_start_time) and on(namespace,job_name) (kube_job_status_active>0))>={$OCP.JOB.MAX.RUN.TIME}),"check","any","job_name",".*") or label_replace(kube_job_status_failed>0,"check","failed","job_name",".*") or label_replace(((time()-kube_job_status_start_time) and on(namespace,job_name) (kube_job_status_active>0))>={$OCP.JOB.MAX.RUN.TIME},"check","longrunning","job_name",".*")
+```
 
-Node filesystem monitoring is also problem-based. Filesystems are discovered only when their usage exceeds `{$OCP.NODE.FS.WARN}`. Two trigger levels are then applied:
+### Node filesystem usage
 
-- Warning: `{$OCP.NODE.FS.WARN}`
-- Critical: `{$OCP.NODE.FS.CRIT}`
+```promql
+100 * (1 - node_filesystem_avail_bytes/node_filesystem_size_bytes) >= {$OCP.NODE.FS.WARN}
+```
 
-### etcd
+### Nodes not ready or unschedulable
 
-The template monitors etcd in two ways:
+```promql
+label_replace(max by (node) ((kube_node_status_condition{condition="Ready",status=~"false|unknown"} == 1) or (kube_node_spec_unschedulable == 1)), "check", "any", "node", ".*") or label_replace(max by (node) (kube_node_status_condition{condition="Ready",status=~"false|unknown"} == 1), "check", "not_ready", "node", ".*") or label_replace(max by (node) (kube_node_spec_unschedulable == 1), "check", "unschedulable", "node", ".*")
+```
 
-- Member-level status through the `OCP: Etcd members status raw` item.
-- Aggregate p99 request latency through the `OCP: Etcd request latency p99` item.
+### Pods in problem state
 
-The etcd member discovery creates items for:
+```promql
+max by(namespace,pod)(kube_pod_status_phase{phase=~"Pending|Failed|Unknown"} or kube_pod_status_unschedulable or (kube_pod_status_ready{condition="false"} unless on(namespace,pod) kube_pod_status_phase{phase="Succeeded"}))>0
+```
 
-- `Target up`
-- `Has leader`
+### Pod CrashLoopBackOff
 
-### Jobs
+```promql
+sum by(namespace,pod)(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"})>0
+```
 
-The Jobs discovery is merged into a single rule. It discovers Jobs when they are either:
+### Pod restarts
 
-- Failed.
-- Running longer than `{$OCP.JOB.MAX.RUN.TIME}`.
-
-### Pods
-
-The Pod status discovery is merged into a single rule. It discovers Pods when they have either:
-
-- A problem state such as Pending, Failed, Unknown, Unschedulable, NotReady or CrashLoopBackOff.
-- Restart count in the last 15 minutes greater than or equal to `{$OCP.POD.RESTARTS.WARN}`.
+```promql
+sum by(namespace,pod)(increase(kube_pod_container_status_restarts_total[15m]))>={$OCP.POD.RESTARTS.WARN}
+```
 
 ### PersistentVolumes
 
-The PV status discovery is merged into a single rule. It discovers PVs that are:
-
-- Failed.
-- Terminating.
-
-### PersistentVolumeClaims
-
-PVC discovery is problem-based and creates items only for PVCs with used percentage greater than or equal to `{$OCP.PVC.WARN}`. Two trigger levels are configured:
-
-- Warning: `{$OCP.PVC.WARN}`
-- Critical: `{$OCP.PVC.CRIT}`
-
-### ResourceQuota
-
-ResourceQuota discovery is problem-based and creates items only for quota resources with usage greater than or equal to `{$OCP.RQ.WARN}`. Two trigger levels are configured:
-
-- Warning: `{$OCP.RQ.WARN}`
-- Critical: `{$OCP.RQ.CRIT}`
-
-### Routes
-
-The template discovers routes that are not admitted.
-
-### Services
-
-Service endpoint discovery is merged into a single rule. It discovers services when:
-
-- There are no available endpoints.
-- There are one or more not-ready endpoints.
-
-## Critical/problem-based discovery behavior
-
-Most discovery rules are intentionally based on queries that return only objects in a problematic state. This means:
-
-- Objects in a healthy state are not discovered.
-- Item prototypes are created only when a problem exists.
-- When the object returns to a healthy state, it disappears from the PromQL result.
-- The dependent item fallback value is set to `0` where configured.
-- The object is removed after the discovery rule's keep-lost period.
-
-This design reduces item count significantly, especially in large OpenShift clusters.
-
-## Important operational notes
-
-### Warning and critical thresholds
-
-For checks that have both warning and critical trigger levels, the PromQL discovery query must use the lower threshold. For example:
-
-- PVC discovery should use `{$OCP.PVC.WARN}`, not `{$OCP.PVC.CRIT}`.
-- Node filesystem discovery should use `{$OCP.NODE.FS.WARN}`, not `{$OCP.NODE.FS.CRIT}`.
-- ResourceQuota discovery should use `{$OCP.RQ.WARN}`, not `{$OCP.RQ.CRIT}`.
-
-Otherwise, Zabbix would not create the item when the resource is only in warning state.
-
-### Namespace filtering
-
-Namespace filtering is controlled by macros such as:
-
-- `{$OCP.POD.NS.MATCHES}`
-- `{$OCP.JOB.NS.MATCHES}`
-- `{$OCP.PVC.NS.MATCHES}`
-- `{$OCP.ROUTE.NS.MATCHES}`
-- `{$OCP.SVC.NS.MATCHES}`
-- `{$OCP.RQ.NS.MATCHES}`
-- `{$OCP.NS.NOT_MATCHES}`
-
-Use these macros at host level to restrict discovery to specific namespaces.
-
-Example:
-
-```text
-{$OCP.POD.NS.MATCHES} = ^(app-prod|batch-prod)$
-{$OCP.NS.NOT_MATCHES} = ^(openshift-|kube-).*
+```promql
+label_replace((kube_persistentvolume_status_phase{phase="Failed"}==1) or (kube_persistentvolume_deletion_timestamp>0),"check","any","persistentvolume",".*") or label_replace(kube_persistentvolume_status_phase{phase="Failed"}==1,"check","failed","persistentvolume",".*") or label_replace(kube_persistentvolume_deletion_timestamp>0,"check","terminating","persistentvolume",".*")
 ```
 
-### History and trends
+### PVC usage
 
-The template keeps raw items with `History = 0` and `Trends = 0`. Dynamic problem-based item prototypes generally use short history and no trends to reduce database load.
+```promql
+100 * (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) >= {$OCP.PVC.WARN}
+```
 
-## Testing Thanos access
+### ResourceQuota usage
 
-Use this test from the Zabbix Server or Proxy:
+```promql
+((100 * kube_resourcequota{type="used"} / on(namespace,resourcequota,resource) kube_resourcequota{type="hard"}) and on(namespace,resourcequota,resource) (kube_resourcequota{type="hard"} > 0)) >= {$OCP.RQ.WARN}
+```
+
+### Routes not admitted
+
+```promql
+((openshift_route_status{type="Admitted",status="True"} == bool 0) == 1)
+```
+
+### Service endpoints
+
+```promql
+label_replace((kube_endpoint_info unless on(namespace,endpoint)(sum by(namespace,endpoint)(kube_endpoint_address_available)>0)) or (sum by(namespace,endpoint)(kube_endpoint_address_not_ready)>0),"check","any","endpoint",".*") or label_replace(kube_endpoint_info unless on(namespace,endpoint)(sum by(namespace,endpoint)(kube_endpoint_address_available)>0),"check","no_available","endpoint",".*") or label_replace(sum by(namespace,endpoint)(kube_endpoint_address_not_ready)>0,"check","not_ready","endpoint",".*")
+```
+
+---
+
+## Testing queries manually
+
+Example query test with `curl`:
 
 ```bash
-curl -ks -H "Authorization: Bearer ${TOKEN}" --get \
-  --data-urlencode 'query=vector(1)' \
-  "${THANOS}/api/v1/query" | jq
+curl -k -s -G "{$OCP.THANOS.URL}/api/v1/query" \
+  -H "Authorization: Bearer <TOKEN>" \
+  --data-urlencode 'query=vector(1)' | jq
 ```
 
-Expected result:
+Example to list all metrics exposed by Thanos Querier:
 
-```json
-{
-  "status": "success",
-  "data": {
-    "resultType": "vector",
-    "result": [
-      {
-        "metric": {},
-        "value": [ ... , "1" ]
-      }
-    ]
-  }
-}
+```bash
+curl -k -s "{$OCP.THANOS.URL}/api/v1/metadata" \
+  -H "Authorization: Bearer <TOKEN>" \
+  | jq -r '.data | keys[]' | sort
 ```
+
+Example to list firing alerts from the OpenShift monitoring stack:
+
+```bash
+curl -k -s -G "{$OCP.THANOS.URL}/api/v1/query" \
+  -H "Authorization: Bearer <TOKEN>" \
+  --data-urlencode 'query=ALERTS{alertstate="firing"}' | jq
+```
+
+## Notes
+
+- Most discoveries are intentionally problem-oriented and may not create items when the cluster is healthy.
+- Lost discovered resources are removed according to the `Keep lost resources` value configured on each discovery rule.
+- The template expects specific OpenShift/Kubernetes metrics to be available from Thanos.
+- Some environments may require adjusting the etcd selector from `job=~".*etcd.*"` to a namespace-based selector such as `namespace="openshift-etcd"`.
